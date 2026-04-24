@@ -600,16 +600,19 @@ off, using gutter-length consistency to reject noise.
 ```
 manga-motion/
 ├── PIPELINE.md                  # this doc
-├── gen_panel_mask_v2.py         # stage 2a: mask generation (GPT Image 2)
-├── snap_mask.py                 # stage 2b: mask refinement (snap to gutters)
-├── overlay_mask.py              # diagnostic: overlay mask on page
-├── gen_voiceover.py             # stage 3a: initial VO batch
-├── gen_voiceover_v2.py          # stage 3b: regens + SFX via sound-generation
+├── motion-manga-skill.md        # agent-facing skill guide
+├── gen_panel_mask_v2.py         # stage 2a: panel mask (GPT Image 2)
+├── snap_mask.py                 # stage 2b: refine mask to real gutters
+├── gen_foreground_mask.py       # stage 2c: character + held-object mask
+├── gen_fg_components.py         # stage 2d: split fg mask into components
+├── gen_blurred_bg.py            # stage 2e: cheap inpaint of character area
+├── gen_voiceover_v2.py          # stage 3: ElevenLabs VO + sound-generation SFX
 ├── index.html                   # stage 4: Hyperframes composition
-├── page{N}.png                  # page renders
+├── page{N}.png                  # page renders (GPT Image 2)
 ├── page{N}_mask_v2.png          # binary panel-fills masks
+├── page{N}_v2_snapped_mask.png  # post-snap binary masks
 ├── page{N}_v2_snapped_panels.json  # snapped polygons (per panel)
-├── page{N}_v2_snapped_overlay.png  # verification overlay
+├── page1_fg_mask.png            # binary character + held-object mask
 ├── audio/
 │   ├── p2_lines.mp3             # combined single-take VO for P2
 │   ├── calculated.mp3           # per-panel voice line
@@ -619,5 +622,5 @@ manga-motion/
 │   ├── sfx_p3.mp3               # AI-generated SFX
 │   ├── runningfootsteps.mp3     # user-supplied SFX
 │   └── boom.mp3                 # user-supplied SFX (the good one)
-└── renders/                     # MP4 outputs
+└── renders/                     # MP4 outputs (gitignored)
 ```
