@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        background: #000;
+      }
+      #stage {
+        position: relative;
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        background: #000;
+      }
+      #pageimg {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1024px;
+        height: 1536px;
+        transform-origin: 0 0;
+        will-change: transform;
+        display: block;
+        user-select: none;
+      }
+      #masks-svg {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1024px;
+        height: 1536px;
+        pointer-events: none;
+        filter: blur(32px);
+        overflow: visible;
+        transform-origin: 0 0;
+        will-change: transform;
+      }
+      #masks-svg polygon {
+        fill: #000;
+        will-change: opacity;
+      }
+      #vignette {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(
+          ellipse at center,
+          rgba(0,0,0,0) 55%,
+          rgba(0,0,0,0.55) 100%
+        );
+        z-index: 10;
+      }
+      #veil {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        z-index: 15;
+        will-change: opacity;
+      }
+      #flash {
+        position: absolute;
+        inset: 0;
+        background: #fff;
+        z-index: 25;
+        opacity: 0;
+        pointer-events: none;
+        will-change: opacity;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="16.5"
+      data-width="1080"
+      data-height="1920"
+    >
+      <div id="stage">
+        <!-- Single-layer composition: original page scan + "dark until read"
+             mask overlay. No fg component layers — every attempt to split
+             the page into animatable foreground layers produced visible
+             artifacts (silhouettes sliding, ghost doublings, sharp-against-
+             blurred-bg contrast). Camera pan/zoom alone is enough motion. -->
+        <img id="pageimg" src="page1.png" />
+        <!-- Polygons extend past the page on all sides (up to 1:1 with page
+             coords); overflow:visible lets them render beyond the SVG box so
+             the 32px blur has room. 24px gutter-edge buffer, 48px page-edge
+             extension (see PIPELINE.md). -->
+        <svg id="masks-svg" viewBox="0 0 1024 1536"
+             xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+          <polygon id="mask1" points="-48,-48 -48,231 1072,332 1072,-48" />
+          <polygon id="mask2" points="-48,188 -48,807 594,843 525,241" />
+          <polygon id="mask3" points="475,228 545,839 1072,873 1072,295" />
+          <polygon id="mask4" points="-48,765 -48,1109 1072,984 1072,829" />
+          <polygon id="mask5" points="1072,936 -48,1061 -48,1584 1072,1584" />
+        </svg>
+        <div id="vignette"></div>
+        <div id="veil" class="clip"
+             data-start="0" data-duration="16.5" data-track-index="3"></div>
+        <div id="flash" class="clip"
+             data-start="0" data-duration="16.5" data-track-index="4"></div>
+
+        <!-- Voiceover — P2 is one continuous take, 1.20x sped in post -->
+        <audio id="vo-p2"         class="clip" data-start="1.90"  data-duration="6.3"
+               data-track-index="5" data-volume="1.0" src="audio/p2_lines.mp3"></audio>
+        <audio id="vo-calculated" class="clip" data-start="10.45" data-duration="2.0"
+               data-track-index="7" data-volume="1.0" src="audio/calculated.mp3"></audio>
+        <audio id="vo-arrived"    class="clip" data-start="12.65" data-duration="2.4"
+               data-track-index="8" data-volume="1.0" src="audio/arrived.mp3"></audio>
+        <audio id="vo-huh"        class="clip" data-start="15.15" data-duration="1.3"
+               data-track-index="9" data-volume="1.0" src="audio/huh.mp3"></audio>
+
+        <!-- Panel SFX -->
+        <audio id="sfx-p1"      class="clip" data-start="0.00"  data-duration="2.5"
+               data-track-index="10" data-volume="0.9" src="audio/sfx_p1.mp3"></audio>
+        <audio id="sfx-p3"      class="clip" data-start="8.20"  data-duration="2.0"
+               data-track-index="11" data-volume="0.7" src="audio/sfx_p3.mp3"></audio>
+        <audio id="sfx-p3-feet" class="clip" data-start="8.50"  data-duration="1.8"
+               data-track-index="12" data-volume="0.9" src="audio/runningfootsteps.mp3"></audio>
+        <audio id="sfx-p5-boom" class="clip" data-start="12.65" data-duration="4.0"
+               data-track-index="13" data-volume="1.0" src="audio/boom.mp3"></audio>
+      </div>
+    </div>
+
+    <script>
+      // Each panel stored as its centroid + target scale. extraScale zooms
+      // AROUND the panel's center, with no drift.
+      const VIEW_W = 1080, VIEW_H = 1920;
+      const PANELS = {
+        p1: { cx: 512, cy: 154, s: 1.055 },   // eyes (top, fit-by-width)
+        p2: { cx: 267, cy: 519, s: 1.930 },   // pizza box (mid-left)
+        p3: { cx: 778, cy: 561, s: 2.085 },   // scooter (mid-right)
+        p4: { cx: 512, cy: 929, s: 1.055 },   // inner monologue (fit-by-width)
+        p5: { cx: 512, cy: 1296, s: 1.055 },  // DOMM splash
+      };
+
+      function focus(p, extraScale = 1) {
+        const s = p.s * extraScale;
+        return {
+          scale: s,
+          x: VIEW_W / 2 - s * p.cx,
+          y: VIEW_H / 2 - s * p.cy,
+        };
+      }
+
+      const PAGE = "#pageimg, #masks-svg";
+
+      function pageSet(panel, push = 1.0) {
+        gsap.set(PAGE, focus(panel, push));
+      }
+      function pageTween(at, panel, push, cfg) {
+        tl.to(PAGE, { ...focus(panel, push), ...cfg }, at);
+      }
+      function pageFromTween(at, panel, fromPush, toPush, cfg) {
+        tl.fromTo(PAGE, focus(panel, fromPush),
+                        { ...focus(panel, toPush), ...cfg }, at);
+      }
+
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true, defaults: { ease: "power2.inOut" } });
+
+      // ---- Initial state ----
+      pageSet(PANELS.p1);
+      gsap.set(["#mask1", "#mask2", "#mask3", "#mask4", "#mask5"], { opacity: 1.0 });
+      gsap.set("#veil", { opacity: 1 });
+      gsap.set("#flash", { opacity: 0 });
+
+      // --- 0.0–0.3: cold open — screen shake + P1 slams in ---
+      tl.to("#veil",  { opacity: 0, duration: 0.18, ease: "power3.out" }, 0.0);
+      tl.to("#mask1", { opacity: 0, duration: 0.15, ease: "power4.out" }, 0.05);
+      pageFromTween(0.0, PANELS.p1, 1.10, 1.00,
+                    { duration: 0.35, ease: "power3.out" });
+      tl.to("#stage", {
+        keyframes: [
+          { x:  16, y: -10, duration: 0.04 },
+          { x: -18, y:  12, duration: 0.04 },
+          { x:  12, y:  -7, duration: 0.04 },
+          { x:  -8, y:   5, duration: 0.04 },
+          { x:   4, y:  -2, duration: 0.04 },
+          { x:   0, y:   0, duration: 0.04 },
+        ],
+      }, 0.0);
+
+      // --- 0.5–1.7: P1 push-in ---
+      pageTween(0.50, PANELS.p1, 1.06, { duration: 1.2, ease: "power1.inOut" });
+
+      // --- 1.7–2.2: pan to P2 (vo-p2 at 1.90, 0.3s before pan end) ---
+      pageTween(1.70, PANELS.p2, 1.00, { duration: 0.5 });
+      tl.to("#mask2", { opacity: 0, duration: 0.30 }, 1.90);
+      // P2 push-in spans the continuous take (1.90–8.04 with 1.20x speedup)
+      pageTween(2.20, PANELS.p2, 1.07, { duration: 5.85, ease: "power1.inOut" });
+
+      // --- 8.00–8.50: pan to P3 (sfx_p3 at 8.20, footsteps at 8.50) ---
+      pageTween(8.00, PANELS.p3, 1.00, { duration: 0.5 });
+      tl.to("#mask3", { opacity: 0, duration: 0.30 }, 8.20);
+      pageTween(8.50, PANELS.p3, 1.05, { duration: 1.65, ease: "power1.inOut" });
+
+      // --- 10.25–10.75: pan to P4 (calculated VO at 10.45) ---
+      pageTween(10.25, PANELS.p4, 1.00, { duration: 0.5 });
+      tl.to("#mask4", { opacity: 0, duration: 0.30 }, 10.45);
+      pageTween(10.75, PANELS.p4, 1.05, { duration: 1.5, ease: "power1.inOut" });
+
+      // --- 12.45–12.95: pan to P5 — reveal/flash/punch/shake/boom ALL sync
+      //                    with arrived VO start at 12.65 ---
+      pageTween(12.45, PANELS.p5, 1.00, { duration: 0.5, ease: "power3.in" });
+      tl.to("#flash", { opacity: 0.85, duration: 0.05 }, 12.65);
+      tl.to("#flash", { opacity: 0, duration: 0.35, ease: "power2.out" }, 12.80);
+      tl.to("#mask5", { opacity: 0, duration: 0.12, ease: "power4.out" }, 12.65);
+      pageFromTween(12.65, PANELS.p5, 1.14, 1.00,
+                    { duration: 0.18, ease: "power4.out" });
+      pageTween(12.85, PANELS.p5, 1.06, { duration: 0.12, ease: "power2.out" });
+      pageTween(13.00, PANELS.p5, 1.00, { duration: 0.18, ease: "power2.inOut" });
+      tl.to("#stage", {
+        keyframes: [
+          { x:  28, y: -18, duration: 0.035 },
+          { x: -32, y:  20, duration: 0.035 },
+          { x:  24, y: -14, duration: 0.035 },
+          { x: -22, y:  16, duration: 0.035 },
+          { x:  18, y: -12, duration: 0.035 },
+          { x: -14, y:   9, duration: 0.035 },
+          { x:  10, y:  -6, duration: 0.035 },
+          { x:  -6, y:   4, duration: 0.035 },
+          { x:   3, y:  -2, duration: 0.035 },
+          { x:   0, y:   0, duration: 0.035 },
+        ],
+      }, 12.65);
+      // Final slow hold — shorter for TikTok, just outlasts boom + "Huh?"
+      pageFromTween(13.20, PANELS.p5, 1.03, 1.00,
+                    { duration: 3.2, ease: "power2.out" });
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>
