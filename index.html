@@ -20,7 +20,7 @@
         overflow: hidden;
         background: #000;
       }
-      #pageimg {
+      #pageimg, .fg-layer {
         position: absolute;
         top: 0;
         left: 0;
@@ -86,12 +86,23 @@
       data-height="1920"
     >
       <div id="stage">
-        <!-- Single-layer composition: original page scan + "dark until read"
-             mask overlay. No fg component layers — every attempt to split
-             the page into animatable foreground layers produced visible
-             artifacts (silhouettes sliding, ghost doublings, sharp-against-
-             blurred-bg contrast). Camera pan/zoom alone is enough motion. -->
-        <img id="pageimg" src="page1.png" />
+        <!-- Layers in stacking order: blurred bg (character silhouettes
+             smeared by gen_blurred_bg.py) → N fg component layers (split by
+             gen_fg_components.py, sharp characters). All layers share one
+             transform — no per-component motion — so the result is visually
+             identical to a single-layer page1.png render. The multi-layer
+             structure is in place for future per-component animation. -->
+        <img id="pageimg" src="page1_bg.png" />
+        <!-- fg components (see page1_fg_components.json):
+             c0=P1 eyes, c1=P2 pizza guy, c2=P3 runner, c3=P3 scooter,
+             c4=P4 face+hand, c5=P5 pizza guy+thrust box, c6=P5 customer -->
+        <img class="fg-layer" id="fg-c0" src="page1_fg_c0.png" />
+        <img class="fg-layer" id="fg-c1" src="page1_fg_c1.png" />
+        <img class="fg-layer" id="fg-c2" src="page1_fg_c2.png" />
+        <img class="fg-layer" id="fg-c3" src="page1_fg_c3.png" />
+        <img class="fg-layer" id="fg-c4" src="page1_fg_c4.png" />
+        <img class="fg-layer" id="fg-c5" src="page1_fg_c5.png" />
+        <img class="fg-layer" id="fg-c6" src="page1_fg_c6.png" />
         <!-- Polygons extend past the page on all sides (up to 1:1 with page
              coords); overflow:visible lets them render beyond the SVG box so
              the 32px blur has room. 24px gutter-edge buffer, 48px page-edge
@@ -153,7 +164,11 @@
         };
       }
 
-      const PAGE = "#pageimg, #masks-svg";
+      // All layers share one transform — bg + fg components + mask overlay.
+      // `PAGE_BUT(id)` excludes one fg component so we can tween it with a
+      // custom transform while everything else follows the camera normally.
+      const PAGE = "#pageimg, .fg-layer, #masks-svg";
+      const PAGE_BUT = (id) => `#pageimg, .fg-layer:not(#${id}), #masks-svg`;
 
       function pageSet(panel, push = 1.0) {
         gsap.set(PAGE, focus(panel, push));
@@ -165,6 +180,25 @@
         tl.fromTo(PAGE, focus(panel, fromPush),
                         { ...focus(panel, toPush), ...cfg }, at);
       }
+
+      // Transform for a single fg component so its own centroid scales and
+      // translates around ITSELF, not around the panel centroid. Lets a
+      // character shrink "into the distance" or grow "toward the camera"
+      // in place, with a screen-space dx/dy drift layered on top.
+      function component_tween(panel, push, compCentroid, extraScale = 1, dx = 0, dy = 0) {
+        const base = focus(panel, push);
+        const scale = base.scale * extraScale;
+        const renderX = base.x + base.scale * compCentroid[0];
+        const renderY = base.y + base.scale * compCentroid[1];
+        return {
+          scale,
+          x: (renderX + dx) - scale * compCentroid[0],
+          y: (renderY + dy) - scale * compCentroid[1],
+        };
+      }
+
+      const C2_CENTROID = [671.1, 565.2];    // P3 runner
+      const C5_CENTROID = [465.6, 1328.9];   // P5 pizza guy + thrust box
 
       window.__timelines = window.__timelines || {};
       const tl = gsap.timeline({ paused: true, defaults: { ease: "power2.inOut" } });
@@ -203,7 +237,15 @@
       // --- 8.00–8.50: pan to P3 (sfx_p3 at 8.20, footsteps at 8.50) ---
       pageTween(8.00, PANELS.p3, 1.00, { duration: 0.5 });
       tl.to("#mask3", { opacity: 0, duration: 0.30 }, 8.20);
-      pageTween(8.50, PANELS.p3, 1.05, { duration: 1.65, ease: "power1.inOut" });
+      // P3 hold: normal push-in for everything except c2. c2 (Blitz running
+      // away) shrinks 1% and drifts +8px right over the hold — subtle
+      // "runs off into the distance."
+      tl.to(PAGE_BUT("fg-c2"),
+            { ...focus(PANELS.p3, 1.05),
+              duration: 1.65, ease: "power1.inOut" }, 8.50);
+      tl.to("#fg-c2",
+            { ...component_tween(PANELS.p3, 1.05, C2_CENTROID, 0.99, 8, 0),
+              duration: 1.65, ease: "power1.inOut" }, 8.50);
 
       // --- 10.25–10.75: pan to P4 (calculated VO at 10.45) ---
       pageTween(10.25, PANELS.p4, 1.00, { duration: 0.5 });
@@ -234,9 +276,17 @@
           { x:   0, y:   0, duration: 0.035 },
         ],
       }, 12.65);
-      // Final slow hold — shorter for TikTok, just outlasts boom + "Huh?"
-      pageFromTween(13.20, PANELS.p5, 1.03, 1.00,
-                    { duration: 3.2, ease: "power2.out" });
+      // Final slow hold — camera settles 1.03 → 1.00 for everything except
+      // c5. c5 (Blitz arriving with thrust box) slowly grows 1% and drifts
+      // +8px right — the box inches toward the viewer on the final beat.
+      tl.fromTo(PAGE_BUT("fg-c5"),
+                focus(PANELS.p5, 1.03),
+                { ...focus(PANELS.p5, 1.00),
+                  duration: 3.2, ease: "power2.out" }, 13.20);
+      tl.fromTo("#fg-c5",
+                component_tween(PANELS.p5, 1.03, C5_CENTROID, 1.00, 0, 0),
+                { ...component_tween(PANELS.p5, 1.00, C5_CENTROID, 1.01, 8, 0),
+                  duration: 3.2, ease: "power2.out" }, 13.20);
 
       window.__timelines["main"] = tl;
     </script>

@@ -172,6 +172,87 @@ when consuming.
 
 ---
 
+## 2.5 Foreground cutout layers (optional)
+
+Panel pan/zoom alone makes a great motion comic. This stage only earns
+its complexity when you want **one specific character** to shrink, grow,
+or drift *within* a held panel — Blitz running off into the distance,
+Blitz lunging the pizza box toward the viewer. Don't use it for baseline
+parallax: every attempt at global parallax produced visible doubling or
+ghost silhouettes.
+
+The method: use an image model to cut the characters out of the page,
+blur the page where they used to be, then re-overlay sharp character
+cutouts on top. Visually identical to the single-layer page when
+everything shares one transform — but each character is now its own
+independently animatable layer.
+
+### 2.5.1 Foreground mask — `gen_foreground_mask.py`
+
+Same `images.edit` pattern as panel mask, different target: every
+character body + every object a character is actively holding filled
+pure white, everything else (environment, panel borders, text, SFX,
+speed lines) pure black. Outputs `page{N}_fg_mask.png`.
+
+The prompt explicitly calls out pets/companions as white, held-objects
+(pizza box, scooter, bag) as white, speech bubbles/SFX/screentone as
+black. Without those rules the model tends to include bubbles or
+screentone, producing noisy masks.
+
+### 2.5.2 Blurred background — `gen_blurred_bg.py`
+
+```bash
+python3 gen_blurred_bg.py page1.png page1_fg_mask.png  # → page1_bg.png
+```
+
+Aggressive Gaussian blur (radius 40) applied only where the fg mask is
+white; rest of the page stays sharp. The mask is dilated 8 px first so
+the character's outline blurs too, not just the interior — otherwise a
+sharp silhouette halo survives.
+
+**Why blur at all.** When a fg component drifts even a few pixels, any
+uncovered bg pixel reads as "ghost of character." Mushy, blurred ghost
+is forgivable; sharp doubled silhouette is not.
+
+### 2.5.3 Component split — `gen_fg_components.py`
+
+```bash
+python3 gen_fg_components.py page1.png page1_fg_mask.png  # → page1_fg_c{0..N}.png
+```
+
+OpenCV `connectedComponentsWithStats` on the binary mask; each
+component becomes a full-size RGBA PNG where alpha = that component's
+silhouette, pixels = the original page. Components with area <
+`MIN_AREA` (10 000 px) drop as noise. Metadata (area, centroid, bbox)
+saved to `page{N}_fg_components.json`.
+
+Centroids are what the per-component scaling uses (see 3.4.1) — copy
+them from the JSON into the composition's JS as constants.
+
+### 2.5.4 Layer stack in `index.html`
+
+```html
+<img id="pageimg" src="page1_bg.png" />                    <!-- blurred -->
+<img class="fg-layer" id="fg-c0" src="page1_fg_c0.png" />  <!-- sharp -->
+<img class="fg-layer" id="fg-c1" src="page1_fg_c1.png" />
+...
+<svg id="masks-svg">...</svg>                              <!-- overlay -->
+```
+
+All three CSS selectors share the same `position / top / left / width /
+height / transform-origin` block. A single `PAGE` selector bundles them
+for camera tweens:
+
+```js
+const PAGE = "#pageimg, .fg-layer, #masks-svg";
+```
+
+With the class-wide selector, the multi-layer stack animates as one —
+pixel-identical to rendering `page1.png` directly. The scaffolding only
+*does* anything when you give one component its own tween (see 3.4.1).
+
+---
+
 ## 3. Motion-comic video (Hyperframes + GSAP)
 
 The "dark until read" reveal effect: each panel starts hidden behind an
@@ -277,6 +358,69 @@ so the panel's centroid always lands at viewport center, regardless of
 scale. Push-ins then zoom around the panel center instead of drifting.
 
 Base scale per panel: `min(viewport_w / panel_w, viewport_h / panel_h)`.
+
+### 3.4.1 Per-component motion — `component_tween()` pattern
+
+Prerequisite: the fg cutout layers from Stage 2.5. With those in place,
+one character can shrink/grow/drift *while everything else follows the
+camera normally*.
+
+**Scale around the component's own centroid, not the panel centroid:**
+
+```js
+function component_tween(panel, push, compCentroid, extraScale = 1,
+                        dx = 0, dy = 0) {
+  const base = focus(panel, push);
+  const scale = base.scale * extraScale;
+  const renderX = base.x + base.scale * compCentroid[0];
+  const renderY = base.y + base.scale * compCentroid[1];
+  return {
+    scale,
+    x: (renderX + dx) - scale * compCentroid[0],
+    y: (renderY + dy) - scale * compCentroid[1],
+  };
+}
+```
+
+Same idea as `focus()`, but the invariant is "this component's centroid
+stays anchored" rather than "the panel's centroid stays centered."
+`extraScale` zooms in place; `dx/dy` add a screen-space drift on top.
+
+**Split selector to avoid tween conflicts.** Two GSAP tweens on the same
+element's transform at the same time fight. Exclude the animated
+component from the class-wide `PAGE` tween:
+
+```js
+const PAGE_BUT = (id) => `#pageimg, .fg-layer:not(#${id}), #masks-svg`;
+
+// P3 hold: everything except c2 pushes in normally
+tl.to(PAGE_BUT("fg-c2"),
+      { ...focus(PANELS.p3, 1.05),
+        duration: 1.65, ease: "power1.inOut" }, 8.50);
+// c2 (Blitz runner): shrink 1%, drift +8 px right over the same window
+tl.to("#fg-c2",
+      { ...component_tween(PANELS.p3, 1.05, C2_CENTROID, 0.99, 8, 0),
+        duration: 1.65, ease: "power1.inOut" }, 8.50);
+```
+
+**Keep motion small.** 1 % scale + ~8 px drift is the sweet spot.
+Bigger motion uncovers the blurred bg as a visible "ghost silhouette"
+behind the drifting component. If you want bigger motion, you need a
+different inpaint than cheap Gaussian blur.
+
+**Don't snap back, don't fade out.** At the next pan, the class-wide
+`PAGE` tween grabs the component and pulls it back to bg-matched; the
+tiny 1 %/8 px perturbation gets absorbed into the pan motion and is
+imperceptible. Adding a "release" keyframe or opacity crossfade at panel
+transitions both looked worse than just letting the pan absorb the
+offset.
+
+**Good moments:** character running *away* (shrink + drift in motion
+direction), character lunging *toward* camera (grow + drift forward),
+object creeping forward on a held hold (pizza box during the final
+beat). **Bad moments:** anywhere the component is near a panel edge
+(drift exposes blur); anywhere camera is also pushing in fast (two
+motions compete).
 
 ### 3.5 Timeline pattern (per panel)
 

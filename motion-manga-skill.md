@@ -218,6 +218,106 @@ blur/buffer/bleed budget. See Stage 4 for why.
 
 ---
 
+## Stage 2.5: Foreground cutouts (optional, for per-character motion)
+
+**Skip this stage if pan/zoom is enough.** Stage 2.5 is purely for
+moments where you want **one specific character** to subtly shrink,
+grow, or drift within a held panel — character running into the
+distance, character lunging toward the viewer, object creeping forward
+on a final beat. For everything else, camera motion is better.
+
+The method: use the image model to cut characters out of the page, blur
+the page where they used to be, overlay sharp cutouts on top. When all
+layers share one transform, the multi-layer stack is visually identical
+to the original page — the scaffolding only *does* anything once you
+give one component its own tween.
+
+### 2.5a. Generate the foreground mask
+
+```bash
+python3 gen_foreground_mask.py page1.png  # → page1_fg_mask.png
+```
+
+GPT Image 2 `images.edit` with a prompt that fills every CHARACTER +
+HELD-OBJECT silhouette white, everything else black. Prompt must
+explicitly name:
+
+- **White:** character bodies, hair, clothing; pets/companions; objects
+  a character is actively holding/riding/wearing (pizza box, scooter,
+  bag, weapon).
+- **Black:** environment (buildings, sky, floor, rain); panel borders
+  and gutters; speech bubbles, thought bubbles, caption boxes, SFX
+  lettering, any text; speed lines and screentone not on a character.
+
+Without those explicit black rules the model includes bubbles or
+screentone and produces noisy masks.
+
+### 2.5b. Blur the page where the characters were
+
+```bash
+python3 gen_blurred_bg.py page1.png page1_fg_mask.png  # → page1_bg.png
+```
+
+Gaussian blur (radius 40) inside the mask, mask dilated 8 px first so
+the character's outline smears too — otherwise a sharp halo survives.
+Why: when a fg component drifts even a few pixels, any uncovered bg
+pixel has to hide a "ghost of character." Mushy ghost is forgivable;
+sharp doubled silhouette is not.
+
+### 2.5c. Split the foreground into connected components
+
+```bash
+python3 gen_fg_components.py page1.png page1_fg_mask.png
+# → page1_fg_c0.png, page1_fg_c1.png, ..., page1_fg_components.json
+```
+
+OpenCV `connectedComponentsWithStats`. Each component becomes a
+full-page RGBA PNG (page pixels, alpha = that component's silhouette
+only). `MIN_AREA = 10000` drops speck noise. Metadata JSON records
+area, centroid, and bbox for each — **copy centroids into your
+composition's JS** for use in per-component tweens (Stage 4).
+
+Expected output: 4–8 components per page (one per character +
+significant held object). If you get 20+, the mask is noisy and the
+fg prompt needs tightening.
+
+### 2.5d. Wire the layers into the composition
+
+```html
+<!-- In stacking order: blurred bg → N sharp fg layers → mask overlay -->
+<img id="pageimg" src="page1_bg.png" />
+<img class="fg-layer" id="fg-c0" src="page1_fg_c0.png" />
+<img class="fg-layer" id="fg-c1" src="page1_fg_c1.png" />
+<!-- ... one per component ... -->
+<svg id="masks-svg">...</svg>
+```
+
+All three selectors share the same position / size / transform-origin
+block. Collapse them into a single camera-tween selector:
+
+```js
+const PAGE = "#pageimg, .fg-layer, #masks-svg";
+```
+
+With the class-wide selector, the layered stack animates as one — same
+result as rendering `page1.png` directly. No visible seams, no drift.
+
+### Footguns
+
+- **Wrong centroids.** The components JSON is authoritative. Copy the
+  exact floats into your JS. Eyeballed centroids cause the component
+  to translate *as* it scales, which looks like it's sliding.
+- **Speck components making it past MIN_AREA.** Bump `MIN_AREA` to
+  20000 if the page has screentone or a noisy mask; re-run the split.
+- **Forgetting the blur step.** If you overlay sharp cutouts on the
+  original sharp page and then drift one, the uncovered bg is a
+  pixel-perfect duplicate of the drifting character.
+- **Non-character objects in the mask.** Re-read the fg mask before
+  splitting; if you see speech bubbles or panel borders, rerun
+  `gen_foreground_mask.py` with a tightened prompt.
+
+---
+
 ## Stage 3: Audio — voiceover + SFX
 
 Audio carries 50% of the impact. Budget accordingly.
@@ -477,6 +577,65 @@ With `extraScale > 1`, push-ins zoom AROUND the panel center. No drift.
 **Footgun:** `transform-origin: 0 0` + translate that isn't recomputed when
 scale changes = drift up-and-to-the-left during push-ins. The `focus()`
 function recomputes the translate for every scale. Use it always.
+
+### 4c.1 Per-component motion (requires Stage 2.5 cutouts)
+
+For the "character shrinks into the distance / lunges forward" moments.
+Same `focus()` idea, but the invariant is the component's own centroid
+instead of the panel centroid.
+
+```js
+function component_tween(panel, push, compCentroid, extraScale = 1,
+                        dx = 0, dy = 0) {
+  const base = focus(panel, push);
+  const scale = base.scale * extraScale;
+  const renderX = base.x + base.scale * compCentroid[0];
+  const renderY = base.y + base.scale * compCentroid[1];
+  return {
+    scale,
+    x: (renderX + dx) - scale * compCentroid[0],
+    y: (renderY + dy) - scale * compCentroid[1],
+  };
+}
+
+// Centroids from page1_fg_components.json — copy as exact floats
+const C2_CENTROID = [671.1, 565.2];   // P3 Blitz running
+const C5_CENTROID = [465.6, 1328.9];  // P5 Blitz with thrust box
+```
+
+**Split selector to avoid tween conflicts.** Two GSAP tweens on the
+same element's transform at the same time fight. Exclude the animated
+component from the class-wide `PAGE` tween:
+
+```js
+const PAGE_BUT = (id) => `#pageimg, .fg-layer:not(#${id}), #masks-svg`;
+
+// P3 hold: everything except c2 pushes in normally
+tl.to(PAGE_BUT("fg-c2"),
+      { ...focus(PANELS.p3, 1.05),
+        duration: 1.65, ease: "power1.inOut" }, 8.50);
+// c2 (Blitz runner): shrink 1 %, drift +8 px right over the same window
+tl.to("#fg-c2",
+      { ...component_tween(PANELS.p3, 1.05, C2_CENTROID, 0.99, 8, 0),
+        duration: 1.65, ease: "power1.inOut" }, 8.50);
+```
+
+**Motion budget: 1 % scale + ~8 px drift.** Don't go bigger unless
+you've upgraded the inpaint — cheap Gaussian blur exposes doubled
+silhouettes past that threshold.
+
+**At panel transitions, do nothing special.** The next pan's class-wide
+`PAGE` tween grabs the component and absorbs the small offset into the
+pan motion. Don't add release keyframes (snap-back looks unnatural) or
+opacity crossfades (fading a character out looks like a glitch).
+
+**Footguns:**
+- Adding a per-component tween without using `PAGE_BUT()` → two tweens
+  fight, component jitters or locks to one arbitrary value.
+- Using panel centroid instead of component centroid → character
+  appears to slide diagonally instead of scaling in place.
+- Animating more than one component per panel at once → hard to read,
+  gets in its own way. Pick one emphasis per panel.
 
 ### 4d. Per-panel timeline pattern
 
