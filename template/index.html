@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        background: #000;
+      }
+      #stage {
+        position: relative;
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        background: #000;
+      }
+      #pageimg, .fg-layer {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1024px;
+        height: 1536px;
+        transform-origin: 0 0;
+        will-change: transform;
+        display: block;
+        user-select: none;
+      }
+      #masks-svg {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1024px;
+        height: 1536px;
+        pointer-events: none;
+        filter: blur(32px);
+        overflow: visible;
+        transform-origin: 0 0;
+        will-change: transform;
+      }
+      #masks-svg polygon {
+        fill: #000;
+        will-change: opacity;
+      }
+      #vignette {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(
+          ellipse at center,
+          rgba(0,0,0,0) 55%,
+          rgba(0,0,0,0.55) 100%
+        );
+        z-index: 10;
+      }
+      #veil {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        z-index: 15;
+        will-change: opacity;
+      }
+      #flash {
+        position: absolute;
+        inset: 0;
+        background: #fff;
+        z-index: 25;
+        opacity: 0;
+        pointer-events: none;
+        will-change: opacity;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="16"
+      data-width="1080"
+      data-height="1920"
+    >
+      <div id="stage">
+        <!-- Layer stack: blurred bg → N sharp fg components → mask overlay.
+             TODO: replace src with your generated bg, and add one fg-layer
+             img per connected component listed in page1_fg_components.json.
+             Each fg-layer needs a unique id like fg-c0, fg-c1, ... -->
+        <img id="pageimg" src="page1_bg.png" />
+        <img class="fg-layer" id="fg-c0" src="page1_fg_c0.png" />
+
+        <!-- "Dark until read" overlay. One polygon per panel, in detection
+             order. Buffer 24px outward + extend page-edge vertices 48px past
+             the page so the 32px CSS blur doesn't bite into panel content.
+             TODO: paste one polygon per panel, with id mask1, mask2, ... -->
+        <svg id="masks-svg" viewBox="0 0 1024 1536"
+             xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+          <polygon id="mask1" points="-48,-48 -48,231 1072,332 1072,-48" />
+        </svg>
+
+        <div id="vignette"></div>
+        <div id="veil" class="clip"
+             data-start="0" data-duration="16" data-track-index="3"></div>
+        <div id="flash" class="clip"
+             data-start="0" data-duration="16" data-track-index="4"></div>
+
+        <!-- TODO: add audio clips below. Each needs class="clip", a unique
+             id, data-start (seconds into composition), data-duration, a
+             unique data-track-index, data-volume, and src pointing to a
+             real file under audio/. See SKILL.md §3 for clip placement. -->
+      </div>
+    </div>
+
+    <script>
+      // ------- Helpers (keep verbatim — see SKILL.md §4) -------
+
+      const VIEW_W = 1080, VIEW_H = 1920;
+
+      // TODO: one entry per panel. cx/cy = panel centroid in page coords;
+      // s = min(VIEW_W / panel_w, VIEW_H / panel_h) so the panel fits.
+      const PANELS = {
+        p1: { cx: 512, cy: 154, s: 1.055 },
+      };
+
+      function focus(p, extraScale = 1) {
+        const s = p.s * extraScale;
+        return {
+          scale: s,
+          x: VIEW_W / 2 - s * p.cx,
+          y: VIEW_H / 2 - s * p.cy,
+        };
+      }
+
+      // All layers share one transform — bg + fg components + mask overlay.
+      // PAGE_BUT(id) excludes one component for per-component motion.
+      const PAGE = "#pageimg, .fg-layer, #masks-svg";
+      const PAGE_BUT = (id) => `#pageimg, .fg-layer:not(#${id}), #masks-svg`;
+
+      function pageSet(panel, push = 1.0) {
+        gsap.set(PAGE, focus(panel, push));
+      }
+      function pageTween(at, panel, push, cfg) {
+        tl.to(PAGE, { ...focus(panel, push), ...cfg }, at);
+      }
+      function pageFromTween(at, panel, fromPush, toPush, cfg) {
+        tl.fromTo(PAGE, focus(panel, fromPush),
+                        { ...focus(panel, toPush), ...cfg }, at);
+      }
+
+      // Per-component motion: scales/translates around the component's own
+      // centroid. Use with PAGE_BUT() to avoid tween conflicts. Keep motion
+      // small (≤1% scale, ≤8px drift) — bigger exposes the blurred bg.
+      function component_tween(panel, push, compCentroid,
+                               extraScale = 1, dx = 0, dy = 0) {
+        const base = focus(panel, push);
+        const scale = base.scale * extraScale;
+        const renderX = base.x + base.scale * compCentroid[0];
+        const renderY = base.y + base.scale * compCentroid[1];
+        return {
+          scale,
+          x: (renderX + dx) - scale * compCentroid[0],
+          y: (renderY + dy) - scale * compCentroid[1],
+        };
+      }
+
+      // TODO: copy centroid floats from page1_fg_components.json, e.g.:
+      //   const C2_CENTROID = [671.1, 565.2];
+
+      // ------- Timeline -------
+
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true,
+                                 defaults: { ease: "power2.inOut" } });
+
+      // Initial state — camera on first panel, all masks opaque, veil up
+      pageSet(PANELS.p1);
+      gsap.set(["#mask1"], { opacity: 1.0 });
+      gsap.set("#veil", { opacity: 1 });
+      gsap.set("#flash", { opacity: 0 });
+
+      // TODO: cold open + per-panel tweens. See SKILL.md §4 for patterns.
+      tl.to("#veil",  { opacity: 0, duration: 0.18, ease: "power3.out" }, 0.0);
+      tl.to("#mask1", { opacity: 0, duration: 0.15, ease: "power4.out" }, 0.05);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>
