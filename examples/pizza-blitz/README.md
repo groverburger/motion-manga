@@ -20,11 +20,15 @@ The animation exercises every stage of the factory:
 
 ```bash
 npx hyperframes lint     # should pass (one warning about mask3, ignorable)
-npx hyperframes render   # MP4 lands under renders/
+npx hyperframes render   # MP4 lands under renders/ (gitignored)
 ```
 
 About 30 seconds on a recent laptop. The killswitch pattern from
 `SKILL.md §4h` is recommended in case the headless browser hangs.
+
+The committed `final.mp4` in this directory is the canonical reference
+output — what your render should look like if everything wired up
+correctly.
 
 ## What this example demonstrates
 
