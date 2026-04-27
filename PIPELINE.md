@@ -82,7 +82,7 @@ they're arranged), CV refines the geometry (exactly where the lines are).
 ### 2.1 Mask generation — `gen_panel_mask_v2.py`
 
 ```bash
-python3 gen_panel_mask_v2.py page1.png page1_mask.png
+python3 tools/gen_panel_mask_v2.py page1.png page1_mask.png
 ```
 
 Asks GPT Image 2 to produce a binary panel-fills diagram: every panel
@@ -102,7 +102,7 @@ Geometry is accurate to ±50–100 px.
 ### 2.2 Mask refinement — `snap_mask.py`
 
 ```bash
-python3 snap_mask.py page1.png page1_mask.png
+python3 tools/snap_mask.py page1.png page1_mask.png
 # produces page1_snapped_panels.json (polygon per panel)
 #       + page1_snapped_overlay.png (visual verification)
 ```
@@ -202,7 +202,7 @@ screentone, producing noisy masks.
 ### 2.5.2 Blurred background — `gen_blurred_bg.py`
 
 ```bash
-python3 gen_blurred_bg.py page1.png page1_fg_mask.png  # → page1_bg.png
+python3 tools/gen_blurred_bg.py page1.png page1_fg_mask.png  # → page1_bg.png
 ```
 
 Aggressive Gaussian blur (radius 40) applied only where the fg mask is
@@ -217,7 +217,7 @@ is forgivable; sharp doubled silhouette is not.
 ### 2.5.3 Component split — `gen_fg_components.py`
 
 ```bash
-python3 gen_fg_components.py page1.png page1_fg_mask.png  # → page1_fg_c{0..N}.png
+python3 tools/gen_fg_components.py page1.png page1_fg_mask.png  # → page1_fg_c{0..N}.png
 ```
 
 OpenCV `connectedComponentsWithStats` on the binary mask; each
@@ -741,30 +741,39 @@ off, using gutter-length consistency to reject noise.
 
 ## 6. File map
 
+The repo is structured as a factory: tools live at the root, the
+boilerplate to copy lives under `template/`, and each finished animation
+lives under `examples/` (or wherever you put it).
+
 ```
 manga-motion/
-├── PIPELINE.md                  # this doc
-├── motion-manga-skill.md        # agent-facing skill guide
-├── gen_panel_mask_v2.py         # stage 2a: panel mask (GPT Image 2)
-├── snap_mask.py                 # stage 2b: refine mask to real gutters
-├── gen_foreground_mask.py       # stage 2c: character + held-object mask
-├── gen_fg_components.py         # stage 2d: split fg mask into components
-├── gen_blurred_bg.py            # stage 2e: cheap inpaint of character area
-├── gen_voiceover_v2.py          # stage 3: ElevenLabs VO + sound-generation SFX
-├── index.html                   # stage 4: Hyperframes composition
-├── page{N}.png                  # page renders (GPT Image 2)
-├── page{N}_mask_v2.png          # binary panel-fills masks
-├── page{N}_v2_snapped_mask.png  # post-snap binary masks
-├── page{N}_v2_snapped_panels.json  # snapped polygons (per panel)
-├── page1_fg_mask.png            # binary character + held-object mask
-├── audio/
-│   ├── p2_lines.mp3             # combined single-take VO for P2
-│   ├── calculated.mp3           # per-panel voice line
-│   ├── arrived.mp3              # (etc.)
-│   ├── huh.mp3                  # customer reaction (Timid Tim)
-│   ├── sfx_p1.mp3               # AI-generated SFX
-│   ├── sfx_p3.mp3               # AI-generated SFX
-│   ├── runningfootsteps.mp3     # user-supplied SFX
-│   └── boom.mp3                 # user-supplied SFX (the good one)
-└── renders/                     # MP4 outputs (gitignored)
+├── README.md                    # entry point
+├── SKILL.md                     # agent-facing skill (assumes pages exist)
+├── PIPELINE.md                  # this doc — full reference, all stages
+├── tools/
+│   ├── gen_panel_mask_v2.py     # stage 2a: panel mask (GPT Image 2)
+│   ├── snap_mask.py             # stage 2b: refine mask to real gutters
+│   ├── gen_foreground_mask.py   # stage 2.5a: character + held-object mask
+│   ├── gen_blurred_bg.py        # stage 2.5b: cheap inpaint of character area
+│   ├── gen_fg_components.py     # stage 2.5c: split fg mask into components
+│   └── gen_voiceover_v2.py      # stage 3: ElevenLabs VO + sound-generation SFX
+├── template/                    # boilerplate Hyperframes project
+│   ├── index.html               # composition skeleton with TODO markers
+│   ├── meta.json
+│   ├── hyperframes.json
+│   ├── AGENTS.md, CLAUDE.md     # framework guidance
+└── examples/
+    └── pizza-blitz/             # complete worked example
+        ├── index.html           # stage 4: Hyperframes composition
+        ├── meta.json
+        ├── page{N}.png          # the page art
+        ├── page{N}_mask_v2.png  # binary panel-fills masks
+        ├── page{N}_v2_snapped_mask.png   # post-snap binary masks
+        ├── page{N}_v2_snapped_panels.json  # snapped polygons
+        ├── page1_fg_mask.png    # binary character + held-object mask
+        ├── page1_bg.png         # blurred background
+        ├── page1_fg_c{0..6}.png # connected fg components
+        ├── page1_fg_components.json
+        ├── audio/               # voiceover + SFX
+        └── renders/             # MP4 outputs (gitignored)
 ```

@@ -1,92 +1,83 @@
 # Motion Manga Skill
 
-A prescriptive guide for turning a story beat sheet into a vertical-format
-animated motion comic with voice, SFX, and pixel-accurate panel masking.
-Written for an AI agent executing end-to-end.
+A prescriptive guide for turning a manga page **the user has already
+provided** into a vertical-format animated motion comic with voice, SFX,
+and pixel-accurate panel masking. Written for an AI agent operating
+inside (or alongside) the `manga-motion` factory repo.
 
-**Read this doc linearly.** Each stage depends on the previous. Footguns are
-noted inline at the point they bite.
+**Read this doc linearly.** Each stage depends on the previous. Footguns
+are noted inline at the point they bite.
+
+---
+
+## Starting state
+
+The user has come to you with one or more manga page images (PNG, ideally
+1024×1536 or close, B&W or color). Your job is to turn them into a
+~14–16 s vertical motion comic at 1080×1920.
+
+You produce nothing about the page art itself. Generation, scanning,
+re-drawing, panel rearrangement — all out of scope. If the page looks
+wrong, ask the user to fix the page; don't try to fix it downstream.
+
+A note on numbering: Stages below start at **Stage 2** because Stage 1
+(page generation) is owned by the user. The numbering is kept aligned
+with `PIPELINE.md` so cross-references match.
 
 ---
 
 ## What this skill does
 
-Input: a story beat sheet (~5 panels' worth of action/dialogue) + character
-description.
+Input:
+- 1+ manga page PNGs (provided by user)
+- A short script: per-panel dialogue, narration, and SFX cues
+- A character → voice-ID map (which ElevenLabs voice plays whom)
+
 Output: an MP4 at 1080×1920, ~14–16 s, with:
-- Generated manga page art
-- Pixel-accurate panel masks
-- Motion-comic reveal animation with pan/zoom per panel
-- Voiceover per speaking line, sound effects per panel
+- Pixel-accurate panel masks for "dark until read" reveal
+- Motion-comic camera movement (pan + push-in per panel)
+- Voiceover per speaking line, SFX per beat
+- Optional per-character motion (Stage 2.5)
 - **TikTok-native pacing** (see §"Pacing rules")
 
-**Target platform: TikTok / Reels / Shorts.** Vertical 9:16, 14–16 s total,
-cold-open hook in the first second, no dead air. Pacing decisions throughout
-this doc assume this target. If you're producing for a different platform
-(YouTube landscape, standalone film, etc.) the rules loosen — see §4.8.
+**Target platform: TikTok / Reels / Shorts.** Vertical 9:16, 14–16 s
+total, cold-open hook in the first second, no dead air. Pacing decisions
+throughout this doc assume this target. If you're producing for a
+different platform (YouTube landscape, standalone film, etc.) the rules
+loosen — see §4.8.
 
-Per chapter cost: ~$0.50 in API fees (image gen + mask gen + TTS + SFX).
-Per chapter compute: ~2 min of local CPU (browser render + CV).
+Per page cost: ~$0.40 in API fees (mask gen + TTS + SFX).
+Per page compute: ~2 min of local CPU (browser render + CV).
+
+## Working layout
+
+You will be operating in (or copying from) this factory repo. The pieces
+relevant to you:
+
+```
+manga-motion/
+├── SKILL.md           # this file
+├── PIPELINE.md        # detailed reference for each stage
+├── tools/             # Python scripts: panel masks, fg cutouts, voice
+├── template/          # Hyperframes project boilerplate
+└── examples/
+    └── pizza-blitz/   # complete worked example — open it if stuck
+```
+
+For a new project, copy `template/` to a fresh directory, drop the user's
+page(s) in, then walk through Stages 2–4 below. The example under
+`examples/pizza-blitz/` is the canonical "this is what done looks like."
 
 ## Prerequisites
 
-Files the agent needs access to:
-- `~/Documents/openai_api_key.txt` — OpenAI key for GPT Image 2
+- `~/Documents/openai_api_key.txt` — OpenAI key for GPT Image 2 (used
+  only for **mask generation**, not page generation)
 - `~/Documents/elevenlabs_api_key.txt` — ElevenLabs key for TTS + SFX
-- Existing voice IDs for your cast (keep a persistent character → voice-ID map)
+- Existing voice IDs for the cast (keep a persistent character →
+  voice-ID map; the example's map is in `examples/pizza-blitz/`)
 - Node.js + npx + ffmpeg on PATH
 - Python 3 with: `openai`, `opencv-python`, `shapely`, `numpy`, `pillow`,
   `requests`
-
----
-
-## Stage 1: Generate the manga page
-
-### Prompt template
-
-```
-An intensely dramatic black-and-white shonen manga page, drawn in
-a sharp, detailed <GENRE> art style. Multi-panel layout (<N> panels)
-with dynamic angled gutters, heavy screentones, crosshatching,
-dramatic chiaroscuro lighting, and explosive speed lines.
-<TONE CONSTRAINT: e.g., "Absurdly serious tone applied to a mundane
-subject, played completely straight.">
-
-Panels:
-1. <FRAMING (close-up/medium/wide/splash)>: <SCENE>. <DIALOGUE/SFX>.
-2. <FRAMING>: <SCENE>. <DIALOGUE>.
-...
-
-Style: authentic shonen manga aesthetic, ink-and-tone only, no color.
-Legible English dialogue and SFX. Portrait orientation.
-```
-
-### Call
-
-```python
-client.images.generate(
-    model="gpt-image-2",
-    prompt=prompt,
-    size="1024x1536",
-    quality="high",
-    n=1,
-)
-```
-
-For pages 2+, use `client.images.edit(image=canonical_page, ...)` with the
-first page as reference image to preserve character appearance.
-
-### Footguns
-
-- **Moderation rejection on copyrighted refs.** `"in the style of Death Note
-  by Takeshi Obata"` → rejected. Use genre descriptors: `"sharp
-  psychological-thriller shonen manga art style"`. Never name existing IP or
-  living artists.
-- **Character drift across pages.** Always reference the *first* page, not
-  the most recent, when generating page N. Drift compounds otherwise.
-- **Layout inconsistency.** The model doesn't always honor "5 panels." If
-  panel count matters for downstream, set the prompt to describe each panel
-  explicitly and verify.
 
 ---
 
@@ -98,10 +89,10 @@ CV is precise but fails on ambiguous gutters. Combined, they work.
 
 ### 2a. Generate a binary panel-fills mask
 
-Call `gen_panel_mask_v2.py` (existing):
+Call `tools/gen_panel_mask_v2.py`:
 
 ```bash
-python3 gen_panel_mask_v2.py page1.png page1_mask.png
+python3 tools/gen_panel_mask_v2.py page1.png page1_mask.png
 ```
 
 This sends page1.png to GPT Image 2 (`images.edit`) with this exact prompt:
@@ -143,10 +134,10 @@ Output constraints:
 
 ### 2b. Snap the rough mask to real gutters
 
-Call `snap_mask.py`:
+Call `tools/snap_mask.py`:
 
 ```bash
-python3 snap_mask.py page1.png page1_mask.png
+python3 tools/snap_mask.py page1.png page1_mask.png
 # outputs page1_snapped_panels.json and page1_snapped_overlay.png
 ```
 
@@ -235,7 +226,7 @@ give one component its own tween.
 ### 2.5a. Generate the foreground mask
 
 ```bash
-python3 gen_foreground_mask.py page1.png  # → page1_fg_mask.png
+python3 tools/gen_foreground_mask.py page1.png  # → page1_fg_mask.png
 ```
 
 GPT Image 2 `images.edit` with a prompt that fills every CHARACTER +
@@ -255,7 +246,7 @@ screentone and produces noisy masks.
 ### 2.5b. Blur the page where the characters were
 
 ```bash
-python3 gen_blurred_bg.py page1.png page1_fg_mask.png  # → page1_bg.png
+python3 tools/gen_blurred_bg.py page1.png page1_fg_mask.png  # → page1_bg.png
 ```
 
 Gaussian blur (radius 40) inside the mask, mask dilated 8 px first so
@@ -267,7 +258,7 @@ sharp doubled silhouette is not.
 ### 2.5c. Split the foreground into connected components
 
 ```bash
-python3 gen_fg_components.py page1.png page1_fg_mask.png
+python3 tools/gen_fg_components.py page1.png page1_fg_mask.png
 # → page1_fg_c0.png, page1_fg_c1.png, ..., page1_fg_components.json
 ```
 
@@ -314,7 +305,7 @@ result as rendering `page1.png` directly. No visible seams, no drift.
   pixel-perfect duplicate of the drifting character.
 - **Non-character objects in the mask.** Re-read the fg mask before
   splitting; if you see speech bubbles or panel borders, rerun
-  `gen_foreground_mask.py` with a tightened prompt.
+  `tools/gen_foreground_mask.py` with a tightened prompt.
 
 ---
 
@@ -887,38 +878,41 @@ The full taxonomy of things that go wrong:
 
 ## Per-stage cost / time
 
+(User-supplied page art is not counted; numbers are for everything else.)
+
 | Stage | Cost | Time |
 |-------|------|------|
-| Page generation | $0.04/page | ~30 s/page |
-| Mask generation | $0.04/page | ~20 s/page |
+| Panel mask generation | $0.04/page | ~20 s/page |
 | Mask snap | Free (local CV) | ~2 s/page |
+| Foreground mask + split (Stage 2.5) | $0.04/page | ~25 s/page |
 | Voiceover (5 lines @ 500 chars avg) | ~$0.10 | ~30 s |
 | SFX (3 clips) | ~$0.03 | ~30 s |
 | Render (14–16 s video) | Free (local browser) | ~20 s |
-| **Per-chapter total (~5 pages)** | **~$0.50** | **~5–8 min** |
+| **Per-page total** | **~$0.30–0.40** | **~3–5 min** |
 
 ---
 
 ## Quick-start checklist
 
-For an agent executing end-to-end on a new chapter:
+For an agent executing end-to-end on a page the user provided:
 
-1. [ ] Read the beat sheet. Identify: panel count, dialogue lines (who says
-       what), SFX moments.
-2. [ ] Write per-panel image prompt. Generate page 1 (first page of
-       chapter).
-3. [ ] For pages 2+, use `images.edit` with page 1 as reference for
-       character consistency.
-4. [ ] Run `gen_panel_mask_v2.py` on each page → binary masks.
-5. [ ] Inspect masks visually. Regen any with wrong panel count or missing
+1. [ ] Confirm inputs: page PNG(s), per-panel script (dialogue + SFX cues),
+       character → voice-ID map. Ask the user if any are missing.
+2. [ ] Copy `template/` to a fresh project directory, drop the page(s) in.
+3. [ ] Run `tools/gen_panel_mask_v2.py` on each page → binary panel masks.
+4. [ ] Inspect masks visually. Regen any with wrong panel count or missing
        panels.
-6. [ ] Run `snap_mask.py` on each page → snapped polygon JSONs.
-7. [ ] Inspect `<page>_snapped_overlay.png` files. If any edge is obviously
+5. [ ] Run `tools/snap_mask.py` on each page → snapped polygon JSONs.
+6. [ ] Inspect `<page>_snapped_overlay.png` files. If any edge is obviously
        wrong (>30 px off), check the comparison image and tune if needed.
-8. [ ] Buffer + extend polygons (24 px Shapely buffer + 48 px page-bleed).
+7. [ ] Buffer + extend polygons (24 px Shapely buffer + 48 px page-bleed).
        Paste into `<svg id="masks-svg">` in `index.html`.
+8. [ ] **Optional (Stage 2.5):** if you want per-character motion, also run
+       `tools/gen_foreground_mask.py` → `tools/gen_blurred_bg.py` →
+       `tools/gen_fg_components.py`. Wire the resulting layers into the
+       composition. Otherwise use the original page as `#pageimg` src.
 9. [ ] Script voice lines per panel. Set per-line voice settings. Generate
-       with `gen_voiceover_v2.py`.
+       with `tools/gen_voiceover_v2.py`.
 10. [ ] Listen to each voice line. Regen duds with different settings /
         v3 tags / reworded text.
 11. [ ] For multi-sentence panels: single TTS call, ffmpeg `atempo` for
@@ -936,22 +930,34 @@ For an agent executing end-to-end on a new chapter:
 15. [ ] Render with the killswitch pattern. Retry if stalled.
 16. [ ] Review output. Iterate on timing / delivery / SFX choices.
 
+If any step is unclear, open `examples/pizza-blitz/` — it's a complete
+worked example that exercises every stage in this checklist.
+
 ---
 
 ## Files you'll produce
 
+For a project named `my-manga`, after running through all stages:
+
 ```
-manga-motion/
-├── page{N}.png                         # page art
-├── page{N}_mask_v2.png                 # binary panel mask
-├── page{N}_v2_snapped_panels.json      # polygon per panel
+my-manga/
+├── index.html                         # Hyperframes composition (from template/)
+├── meta.json                          # Hyperframes project meta
+├── hyperframes.json                   # Hyperframes config
+├── AGENTS.md, CLAUDE.md               # framework guidance (from template/)
+├── page{N}.png                        # user's page art (input)
+├── page{N}_mask_v2.png                # binary panel mask (Stage 2)
+├── page{N}_v2_snapped_panels.json     # snapped polygon per panel (Stage 2)
+├── page1_fg_mask.png                  # binary fg mask (Stage 2.5, optional)
+├── page1_bg.png                       # blurred bg (Stage 2.5, optional)
+├── page1_fg_c{0..N}.png               # fg components (Stage 2.5, optional)
+├── page1_fg_components.json           # fg metadata (Stage 2.5, optional)
 ├── audio/
-│   ├── p{N}_lines.mp3                  # VO per panel
-│   ├── sfx_p{N}.mp3                    # SFX per panel
+│   ├── p{N}_lines.mp3                 # VO per panel
+│   ├── sfx_p{N}.mp3                   # SFX per panel
 │   └── ...
-├── index.html                          # Hyperframes composition
-└── renders/<timestamp>.mp4              # final motion comic
+└── renders/<timestamp>.mp4            # final motion comic (gitignored)
 ```
 
-End state: one self-contained folder per chapter that renders to a vertical
-MP4.
+End state: one self-contained directory per page (or per chapter) that
+renders to a vertical MP4 with `npx hyperframes render`.
