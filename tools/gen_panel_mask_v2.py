@@ -38,9 +38,7 @@ Output constraints:
 """
 
 def generate(src: pathlib.Path, out: pathlib.Path) -> None:
-    client = OpenAI(
-        api_key=pathlib.Path.home().joinpath("Documents/openai_api_key.txt").read_text().strip()
-    )
+    client = OpenAI()  # reads OPENAI_API_KEY from env
     with open(src, "rb") as f:
         resp = client.images.edit(
             model="gpt-image-2",

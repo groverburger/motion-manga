@@ -1,4 +1,4 @@
-# manga-motion
+# motion-manga
 
 A factory for turning a manga page into a vertical motion-comic video.
 Bring a generated or scanned page; the agent + scripts do the rest:
@@ -26,7 +26,7 @@ For a worked example end-to-end, see `examples/pizza-blitz/`.
 ## Repo layout
 
 ```
-manga-motion/
+motion-manga/
 ├── README.md            # this file
 ├── SKILL.md             # agent-facing skill: how to animate a page
 ├── PIPELINE.md          # detailed reference for each stage
@@ -39,14 +39,16 @@ manga-motion/
 ## Prerequisites
 
 - Python 3.10+ with `opencv-python`, `Pillow`, `numpy`, `shapely`,
-  `openai`, `elevenlabs`
+  `openai`, `requests`
 - Node + npm (for `npx hyperframes` — render pipeline)
 - An OpenAI API key (panel + foreground masks via GPT Image 2)
 - An ElevenLabs API key (voice + sound effects)
 
-API keys are read from `~/Documents/openai_api_key.txt` and
-`~/Documents/elevenlabs_api_key.txt` by the scripts under `tools/`.
-Adjust the paths inside the scripts if yours live somewhere else.
+The scripts under `tools/` read `OPENAI_API_KEY` and `ELEVENLABS_API_KEY`
+from the environment. Either `export` them once for your shell session
+or prefix the call (`OPENAI_API_KEY=sk-... python3 tools/...`). The
+agent operating this factory is expected to know the keys from
+conversation, or to ask the user for them.
 
 ## What this is not
 

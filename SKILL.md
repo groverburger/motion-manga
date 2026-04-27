@@ -3,7 +3,7 @@
 A prescriptive guide for turning a manga page **the user has already
 provided** into a vertical-format animated motion comic with voice, SFX,
 and pixel-accurate panel masking. Written for an AI agent operating
-inside (or alongside) the `manga-motion` factory repo.
+inside (or alongside) the `motion-manga` factory repo.
 
 **Read this doc linearly.** Each stage depends on the previous. Footguns
 are noted inline at the point they bite.
@@ -55,10 +55,10 @@ You will be operating in (or copying from) this factory repo. The pieces
 relevant to you:
 
 ```
-manga-motion/
+motion-manga/
 ├── SKILL.md           # this file
 ├── PIPELINE.md        # detailed reference for each stage
-├── tools/             # Python scripts: panel masks, fg cutouts, voice
+├── tools/             # Python scripts: panel masks, fg cutouts
 ├── template/          # Hyperframes project boilerplate
 └── examples/
     └── pizza-blitz/   # complete worked example — open it if stuck
@@ -70,14 +70,18 @@ page(s) in, then walk through Stages 2–4 below. The example under
 
 ## Prerequisites
 
-- `~/Documents/openai_api_key.txt` — OpenAI key for GPT Image 2 (used
-  only for **mask generation**, not page generation)
-- `~/Documents/elevenlabs_api_key.txt` — ElevenLabs key for TTS + SFX
+- An OpenAI API key (used only for **mask generation**, not page
+  generation) and an ElevenLabs API key (TTS + SFX). Assume you already
+  know these from conversation; if not, ask the user before running
+  any tool that needs them. Tools read `OPENAI_API_KEY` and
+  `ELEVENLABS_API_KEY` from the environment — either `export` them or
+  prefix the call.
 - Existing voice IDs for the cast (keep a persistent character →
-  voice-ID map; the example's map is in `examples/pizza-blitz/`)
-- Node.js + npx + ffmpeg on PATH
+  voice-ID map; the example's IDs are inlined in
+  `examples/pizza-blitz/gen_voiceover.py`).
+- Node.js + npx + ffmpeg on PATH.
 - Python 3 with: `openai`, `opencv-python`, `shapely`, `numpy`, `pillow`,
-  `requests`
+  `requests`.
 
 ---
 
@@ -486,7 +490,7 @@ Hyperframes (HeyGen) composition with GSAP-driven timeline. Output MP4.
 ### 4a. Project setup
 
 ```bash
-cd manga-motion && npx hyperframes init .
+cd motion-manga && npx hyperframes init .
 ```
 
 Creates `index.html`, `hyperframes.json`, `meta.json`. Edit `index.html`.
@@ -723,7 +727,7 @@ Hyperframes occasionally stalls silently. Wrap in a watchdog:
 
 ```bash
 pkill -9 -f "hyperframes render" 2>/dev/null; sleep 1
-cd manga-motion && (npx hyperframes render 2>&1 | tail -3) & PID=$!
+cd motion-manga && (npx hyperframes render 2>&1 | tail -3) & PID=$!
 (sleep 60 && kill -9 $PID 2>/dev/null && echo "--- TIMED OUT ---") & WATCHDOG=$!
 wait $PID 2>/dev/null; RC=$?
 kill $WATCHDOG 2>/dev/null; wait $WATCHDOG 2>/dev/null
@@ -912,7 +916,8 @@ For an agent executing end-to-end on a page the user provided:
        `tools/gen_fg_components.py`. Wire the resulting layers into the
        composition. Otherwise use the original page as `#pageimg` src.
 9. [ ] Script voice lines per panel. Set per-line voice settings. Generate
-       with `tools/gen_voiceover_v2.py`.
+       via the ElevenLabs TTS API (see `examples/pizza-blitz/gen_voiceover.py`
+       for a worked invocation pattern).
 10. [ ] Listen to each voice line. Regen duds with different settings /
         v3 tags / reworded text.
 11. [ ] For multi-sentence panels: single TTS call, ffmpeg `atempo` for

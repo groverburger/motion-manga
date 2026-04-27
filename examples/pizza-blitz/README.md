@@ -1,6 +1,6 @@
 # pizza-blitz
 
-A worked example of the manga-motion pipeline: a 16.5-second vertical
+A worked example of the motion-manga pipeline: a 16.5-second vertical
 motion comic for the first page of a shonen-style parody about a pizza
 delivery guy who treats his job with way too much gravity.
 

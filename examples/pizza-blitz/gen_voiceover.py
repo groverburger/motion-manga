@@ -5,9 +5,9 @@ Plus generate three SFX for panels 1, 3, 5 via the sound-generation API.
 
 Preserves existing audio/promise.mp3 and audio/mistakes.mp3 untouched.
 """
-import pathlib, requests, sys
+import os, pathlib, requests, sys
 
-KEY = pathlib.Path.home().joinpath("Documents/elevenlabs_api_key.txt").read_text().strip()
+KEY = os.environ["ELEVENLABS_API_KEY"]
 VOICE_ID = "f3ipuCDocGuYEK3f9JwC"    # Blitz
 OUT = pathlib.Path(__file__).parent / "audio"
 OUT.mkdir(exist_ok=True)

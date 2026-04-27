@@ -451,7 +451,7 @@ push-in:     tl.to("#page", focus(PANELS.pN, 1.05-1.07), {duration: 1-3})
 ### 3.7 Render
 
 ```bash
-cd manga-motion && npx hyperframes render
+cd motion-manga && npx hyperframes render
 ```
 
 ~15–20 s on laptop, produces 1080×1920 30fps MP4, ~15 MB for 18 s.
@@ -463,7 +463,7 @@ no process death). Wrap render invocations with a hard timeout:
 
 ```bash
 pkill -9 -f "hyperframes render" 2>/dev/null; sleep 1
-cd manga-motion && \
+cd motion-manga && \
   (npx hyperframes render 2>&1 | tail -3) & PID=$!
 (sleep 60 && kill -9 $PID 2>/dev/null && echo "--- TIMED OUT ---") & WATCHDOG=$!
 wait $PID 2>/dev/null; RC=$?
@@ -746,7 +746,7 @@ boilerplate to copy lives under `template/`, and each finished animation
 lives under `examples/` (or wherever you put it).
 
 ```
-manga-motion/
+motion-manga/
 ├── README.md                    # entry point
 ├── SKILL.md                     # agent-facing skill (assumes pages exist)
 ├── PIPELINE.md                  # this doc — full reference, all stages
@@ -755,8 +755,7 @@ manga-motion/
 │   ├── snap_mask.py             # stage 2b: refine mask to real gutters
 │   ├── gen_foreground_mask.py   # stage 2.5a: character + held-object mask
 │   ├── gen_blurred_bg.py        # stage 2.5b: cheap inpaint of character area
-│   ├── gen_fg_components.py     # stage 2.5c: split fg mask into components
-│   └── gen_voiceover_v2.py      # stage 3: ElevenLabs VO + sound-generation SFX
+│   └── gen_fg_components.py     # stage 2.5c: split fg mask into components
 ├── template/                    # boilerplate Hyperframes project
 │   ├── index.html               # composition skeleton with TODO markers
 │   ├── meta.json
@@ -764,6 +763,8 @@ manga-motion/
 │   ├── AGENTS.md, CLAUDE.md     # framework guidance
 └── examples/
     └── pizza-blitz/             # complete worked example
+        ├── gen_voiceover.py     # ElevenLabs voice + SFX (project-specific)
+        └── ...
         ├── index.html           # stage 4: Hyperframes composition
         ├── meta.json
         ├── page{N}.png          # the page art
