@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="logo.svg" width="140" alt="motion-manga">
+  <img src="logo.svg" width="380" alt="motion-manga">
 </p>
-
-# motion-manga
 
 A factory for turning a manga page into a vertical motion-comic video.
 Bring a generated or scanned page; the agent + scripts do the rest:
