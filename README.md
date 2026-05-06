@@ -2,54 +2,55 @@
   <img src="logo.svg" width="380" alt="motion-manga">
 </p>
 
-A factory for turning a manga page into a vertical motion-comic video.
-Bring a generated or scanned page; the agent + scripts do the rest:
-panel detection, character cutouts, voiceover, sound design, animation.
+A pipeline I built for turning manga pages into vertical motion-comic
+videos. The output is 1080×1920 and runs about 16 seconds, sized for
+TikTok / Reels / Shorts. There's camera movement between panels,
+voiceover, sound effects, and small per-character motion.
 
-The output is a 16-second-ish 1080×1920 MP4 with camera movement,
-panel-by-panel reveal, voiceover, sound effects, and subtle character
-motion. Tuned for vertical short-form (TikTok / Reels / Shorts).
+## Demo
 
-## What it produces
+![pizza-blitz preview, silent, 2.5x speed](examples/pizza-blitz/final.gif)
 
-![pizza-blitz preview (silent, 2.5x speed)](examples/pizza-blitz/final.gif)
-
-The clip above is a sped-up, silent preview of `examples/pizza-blitz/`
-— the full worked example, with audio, is in
-[`examples/pizza-blitz/final.mp4`](examples/pizza-blitz/final.mp4).
+That clip is silent and sped up. The full version with audio is at
+[examples/pizza-blitz/final.mp4](examples/pizza-blitz/final.mp4).
 
 ## How it works
 
-Drop your manga page(s) into a new project directory and ask a coding
-agent (Claude Code, etc.) to follow `SKILL.md`. The agent will:
+You drop one or more manga pages into a project directory, then point
+a coding agent (Claude Code, etc.) at `SKILL.md` and let it drive.
+Across five rough stages, the agent:
 
-1. Generate a panel mask from the page (GPT Image 2) and snap the
-   polygon edges to real gutters with `tools/snap_mask.py`.
-2. Generate a foreground mask, blur the page where characters were,
-   and split the foreground into per-character RGBA layers.
-3. Generate voiceover and sound effects (ElevenLabs v3).
-4. Fill in a Hyperframes composition based on `template/`.
-5. Render to MP4.
+1. Asks GPT Image 2 for a binary panel mask, then snaps the rough
+   polygon edges to real gutters using `tools/snap_mask.py`.
+2. Asks GPT Image 2 again for a foreground mask, blurs the original
+   page where the characters used to be, and splits the foreground
+   into per-character RGBA layers via OpenCV connected components.
+3. Generates voiceover and sound effects with ElevenLabs v3.
+4. Fills in a Hyperframes composition starting from `template/`.
+5. Renders the result to MP4.
+
+Each stage is either a prompt or a small Python script. Any of them
+can be swapped out.
 
 ## Quickstart
 
-Render the example:
+To render the included example:
 
 ```bash
 cd examples/pizza-blitz
-npx hyperframes render        # → renders/pizza-blitz_<timestamp>.mp4
+npx hyperframes render
 ```
 
-Start a new project (the agent will fill in the gaps as it walks
-through `SKILL.md`):
+To start a new project:
 
 ```bash
 cp -r template my-manga
 cp <your_page>.png my-manga/page1.png
 export OPENAI_API_KEY=sk-...
 export ELEVENLABS_API_KEY=...
-# then point your coding agent at SKILL.md and let it drive
 ```
+
+Then ask your coding agent to follow `SKILL.md`.
 
 ## Repo layout
 
@@ -69,19 +70,16 @@ motion-manga/
 
 - Python 3.10+ with `opencv-python`, `Pillow`, `numpy`, `shapely`,
   `openai`, `requests`
-- Node + npm (for `npx hyperframes` — render pipeline)
-- An OpenAI API key (panel + foreground masks via GPT Image 2)
-- An ElevenLabs API key (voice + sound effects)
+- Node + npm, for `npx hyperframes`
+- An OpenAI API key, for GPT Image 2 mask generation
+- An ElevenLabs API key, for voice and sound effects
 
-The scripts under `tools/` read `OPENAI_API_KEY` and `ELEVENLABS_API_KEY`
-from the environment. Either `export` them once for your shell session
-or prefix the call (`OPENAI_API_KEY=sk-... python3 tools/...`). The
-agent operating this factory is expected to know the keys from
-conversation, or to ask the user for them.
+The Python scripts in `tools/` read `OPENAI_API_KEY` and
+`ELEVENLABS_API_KEY` from the environment. Either `export` them once
+per shell session or prefix individual calls.
 
-## What this is not
+## A note on scope
 
-Not a page-art generator. The pipeline assumes your pages already
-exist — drawn, scanned, or generated elsewhere. If you also want to
-generate pages from a prompt, do that step separately and bring the
-result here.
+This doesn't generate page art. Bring your own pages, however you got
+them. If you want pages from a prompt too, do that as a separate step
+and feed the result in here.
