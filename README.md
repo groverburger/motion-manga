@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.svg" width="140" alt="motion-manga">
+</p>
+
 # motion-manga
 
 A factory for turning a manga page into a vertical motion-comic video.
@@ -8,7 +12,15 @@ The output is a 16-second-ish 1080×1920 MP4 with camera movement,
 panel-by-panel reveal, voiceover, sound effects, and subtle character
 motion. Tuned for vertical short-form (TikTok / Reels / Shorts).
 
-## How to use it
+## What it produces
+
+![pizza-blitz preview (silent, 2.5x speed)](examples/pizza-blitz/final.gif)
+
+The clip above is a sped-up, silent preview of `examples/pizza-blitz/`
+— the full worked example, with audio, is in
+[`examples/pizza-blitz/final.mp4`](examples/pizza-blitz/final.mp4).
+
+## How it works
 
 Drop your manga page(s) into a new project directory and ask a coding
 agent (Claude Code, etc.) to follow `SKILL.md`. The agent will:
@@ -21,7 +33,25 @@ agent (Claude Code, etc.) to follow `SKILL.md`. The agent will:
 4. Fill in a Hyperframes composition based on `template/`.
 5. Render to MP4.
 
-For a worked example end-to-end, see `examples/pizza-blitz/`.
+## Quickstart
+
+Render the example:
+
+```bash
+cd examples/pizza-blitz
+npx hyperframes render        # → renders/pizza-blitz_<timestamp>.mp4
+```
+
+Start a new project (the agent will fill in the gaps as it walks
+through `SKILL.md`):
+
+```bash
+cp -r template my-manga
+cp <your_page>.png my-manga/page1.png
+export OPENAI_API_KEY=sk-...
+export ELEVENLABS_API_KEY=...
+# then point your coding agent at SKILL.md and let it drive
+```
 
 ## Repo layout
 
@@ -30,10 +60,11 @@ motion-manga/
 ├── README.md            # this file
 ├── SKILL.md             # agent-facing skill: how to animate a page
 ├── PIPELINE.md          # detailed reference for each stage
-├── tools/               # Python scripts for masks, cutouts, voice
+├── logo.svg
+├── tools/               # Python scripts for masks + cutouts
 ├── template/            # boilerplate Hyperframes project to copy
 └── examples/
-    └── pizza-blitz/     # complete worked example (3 pages, 16s video)
+    └── pizza-blitz/     # complete worked example (3 pages, 16 s video)
 ```
 
 ## Prerequisites

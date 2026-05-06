@@ -4,6 +4,10 @@ A worked example of the motion-manga pipeline: a 16.5-second vertical
 motion comic for the first page of a shonen-style parody about a pizza
 delivery guy who treats his job with way too much gravity.
 
+![preview (silent, 2x speed)](final.gif)
+
+The full audio version is in `final.mp4` (16.5 s, 14 MB).
+
 The animation exercises every stage of the factory:
 
 - **Stage 2** — panel detection: GPT Image 2 binary mask refined by
